@@ -3,20 +3,19 @@ package org.fs.util.diff;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.fs.util.diff.data.Merge;
-import org.fs.util.diff.data.io.SetToFileMapper;
-import org.fs.util.diff.data.io.SetToFileMapperImpl;
-import org.fs.util.diff.data.mapper.FileToListMapper;
-import org.fs.util.diff.data.mapper.FileToListMapperImpl;
-import org.fs.util.diff.data.mapper.FileToSetMapper;
-import org.fs.util.diff.data.mapper.FileToSetMapperImpl;
-import org.fs.util.diff.util.Utils;
+import org.fs.util.diff.data.io.*;
 
 import java.io.*;
 import java.util.List;
 import java.util.Set;
-import java.util.TreeSet;
-import java.util.regex.Pattern;
+
+import static org.fs.util.diff.util.Utils.MERGE_MAPPER;
+import static org.fs.util.diff.util.Utils.RESOURCES;
 
 public class Main {
 
@@ -25,41 +24,34 @@ public class Main {
     private final static String PROJECT_DIR = new File("./", RESOURCE_DIR).getAbsolutePath();
     private final static String OUT_DIR = new File("./", "build/tmp/").getAbsolutePath();
 
-    private final static String SEARCH_PATTERN = "(layout|raw|drawable|anim|color|animator).*$";
-
-    private final static String[] KEYWORDS = new String[] {"layout", "animator", "raw", "drawable", "anim", "color", ""};
-
     public static void main(String[] args) {
-        final File resources = new File(PROJECT_DIR, "skipped_resources_2.txt");
         final File release = new File(PROJECT_DIR, "release.json");
-        final Pattern pattern = Pattern.compile(SEARCH_PATTERN, Pattern.MULTILINE);
-
-        final FileToSetMapper<String> setMapper = new FileToSetMapperImpl();
-        final Set<String> lookUp = setMapper.getSet(resources);
 
         final Gson gson = new GsonBuilder().create();
         final TypeToken<List<Merge>> typeToken = new TypeToken<>() {};
 
-        final FileToListMapper<Merge> listMapper = new FileToListMapperImpl<>(gson, typeToken);
+        final FileToListMapper<Merge> listMapper = FileToListMapper.create(gson, typeToken);
         final List<Merge> mergeList = listMapper.getMap(release);
 
-        final Set<String> search = Utils.mapToSet(mergeList, pattern);
+        final Set<String> search = mergeList.stream()
+            .map(MERGE_MAPPER)
+            .collect(Collectors.toSet());
 
-        final Set<String> hits = new TreeSet<>();
-        for (String q: search)
-        {
-            if (lookUp.contains(q))
-            {
-                hits.add(q);
-            }
+
+        final Map<String, List<String>> source = new HashMap<>();
+
+        final MapToXmlMapper<String> xml = MapToXmlMapper.create();
+        final ListToWildcardMapper wildcard = ListToWildcardMapper.create();
+
+        final SetToListMapper<String> mapper = SetToListMapper.create();
+        final ListToFileMapper<String> io = ListToFileMapper.create();
+        for (String filter: RESOURCES) {
+            final List<String> data = mapper.map(search, filter);
+            final List<String> w = wildcard.apply(data);
+            source.put(filter, w);
+            io.setList(w, filter, new File(OUT_DIR, filter + ".txt"));
         }
 
-        final SetToFileMapper<String> fileMapper = new SetToFileMapperImpl();
-        for (String filter: KEYWORDS)
-        {
-            final String name = filter.equals("") ? "release" : filter;
-            fileMapper.setMap(hits, filter, new File(OUT_DIR, name + ".txt"));
-        }
-
+        xml.setMap(source, new File(OUT_DIR, "keep.xml"));
     }
 }
